@@ -1,0 +1,433 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Output Formatter
+# ################
+# Copyright 2019 James Harmison <jharmison@gmail.com>
+#
+# This output formatter is intended to be sourced in your script. There are
+# functions and formatting definitions exposed at the bottom of this script
+# that you can then utilize.
+# Primarily, it deals with handling of esoteric shells and their different
+# built-in behavior, allowing for ANSI escaped color sequences to be used with
+# text folding in a predictable, sane way and allowing for task completion with
+# human-readable descriptions and status messages.
+# Output of run commands can be retrieved by manipulating FD3, to which all
+# commands dump their output. If no FD3 is specified, the output is sent to
+# /dev/null.
+#
+# TODO:
+#   - Improve speed of centering code, reducing redundancy
+#       (especially for boxes)
+#
+# Portions of this formatter were inspired by and taken from the work in
+# Spectre & Meltdown checker - https://github.com/speed47/spectre-meltdown-checker
+# by Stephane Lesimple, covered under the GNU GPL 3.0
+#
+# Several perl scripts were pulled from CPAN, and are covered under their
+# respective licenses.
+#
+# Set these variables after sourcing to modify behavior
+FORMATTER_NO_COLOR=0
+FORMATTER_AUTO_WIDTH=1
+FORMATTER_MAX_WIDTH=80
+
+# https://unix.stackexchange.com/questions/4650/determining-path-to-sourced-shell-script
+# Thanks Paul Brannan!
+fulldir() {
+    dirname `realpath "$1"`
+}
+if test -n "$BASH" ; then
+    _script_dir=`fulldir "$BASH_SOURCE"`
+elif test -n "$TMOUT" ; then
+    _script_dir=`fulldir "${.sh.file}"`
+elif test -n "$ZSH_NAME" ; then
+    _script_dir=`fulldir "${(%):-%x}"`
+elif test ${0##*/} = dash ; then
+    x=`lsof -p $$ -Fn0 | tail -1`
+    _script_dir=`fulldir "${x#n}"`
+else
+    _script_dir=`fulldir "$0"`
+fi
+# Perl root that may or may not be here
+_perl_root="$_script_dir/.perl-env"
+
+# Some basic things to construct text types from
+_ansi_prefix='\033[' ; _ansi_fg=30 ; _ansi_bg=40
+_ansi_black=0 ; _ansi_red=1 ; _ansi_green=2 ; _ansi_yellow=3
+_ansi_blue=4 ; _ansi_magenta=5 ; _ansi_cyan=6 ; _ansi_white=7
+_ansi_bold_suffix=';1'
+
+# What to do with output of commands we run in boxes
+if ! { true >&3;} 2>/dev/null; then # FD 3 not already defined
+    exec 3>/dev/null                # so just dump all output
+fi
+
+# Prefer printf, but otherwise identify echo type
+echo_cmd_type=echo
+if which printf >/dev/null 2>&1; then
+    echo_cmd=`which printf`
+    echo_cmd_type=printf
+elif which echo >/dev/null 2>&1; then
+    echo_cmd=`which echo`
+else
+    # maybe the `which` command is broken?
+    [ -x /bin/echo        ] && echo_cmd=/bin/echo
+    # for Android
+    [ -x /system/bin/echo ] && echo_cmd=/system/bin/echo
+fi
+# still empty? fallback to builtin
+[ -z "$echo_cmd" ] && echo_cmd=echo
+
+# Strip ANSI escapes from stdin
+__strip_stdin() {
+    if [ "$echo_cmd_type" = "printf" ]; then
+        _ctrlchar=`$echo_cmd "\033"`
+    else
+        _ctrlchar=`$echo_cmd -e "\033"`
+    fi
+    sed -r "s/$_ctrlchar"'\[([0-9][0-9]?(;[0-9][0-9]?)?)?m//g'
+}
+# Strip ANSI escapes from all arguments
+__strip_args() {
+    if [ "$echo_cmd_type" = "printf" ]; then
+        $echo_cmd "$*" | __strip_stdin
+    else
+        $echo_cmd -e "$*" | __strip_stdin
+    fi
+}
+# Basic abstraction to handle output regardless of echo_cmd
+__echo() {
+    opt="$1"
+    shift
+    _msg="$*"
+
+    if [ "$FORMATTER_NO_COLOR" -eq 1 ] ; then
+        _msg=`__strip_args "${_msg}"`
+    fi
+    if [ "$echo_cmd_type" == "printf" ]; then
+        if [ "$opt" = "-n" ]; then
+            $echo_cmd "$_msg"
+        else
+            $echo_cmd "$_msg\n"
+        fi
+    else
+        # shellcheck disable=SC2086
+        $echo_cmd $opt -e "$_msg"
+    fi
+}
+# Repeat spaces for things
+__spaces() {
+    if [ "$echo_cmd_type" = printf ]; then
+        $echo_cmd '%*s' "$1"
+    else
+        for i in `seq "$1"`; do
+            $echo_cmd -n ' '
+        done
+    fi
+}
+# Normal output with newline
+_echo() {
+    __echo '' "$*"
+}
+# Output with no trailing newline
+_echo_nol() {
+    __echo -n "$*"
+}
+# Build ANSI definitions
+_ansi_seq() {
+    _ansi_tail=m
+    _ansi_type="$_ansi_fg"
+    _ansi_color=''
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -b)     _ansi_type="$_ansi_bg"              ;;
+            -B)     _ansi_tail="${_ansi_bold_suffix}m"  ;;
+            *)      _ansi_color="$1"                    ;;
+        esac; shift
+    done
+    _ansi_code=`expr $_ansi_type + $_ansi_color`
+    _echo_nol "${_ansi_prefix}${_ansi_code}${_ansi_tail}"
+}
+# If we have the perl root, use it
+if [ -d "$_perl_root" ]; then
+    PATH="${_perl_root}/bin${PATH:+:${PATH}}"; export PATH
+    PERL5LIB="${_perl_root}/lib/perl5${PERL5LIB:+:${PERL5LIB}}"; export PERL5LIB
+    PERL_LOCAL_LIB_ROOT="${_perl_root}${PERL_LOCAL_LIB_ROOT:+:${PERL_LOCAL_LIB_ROOT}}"; export PERL_LOCAL_LIB_ROOT
+    PERL_MB_OPT="--install_base \"${_perl_root}\""; export PERL_MB_OPT
+    PERL_MM_OPT="INSTALL_BASE=${_perl_root}"; export PERL_MM_OPT
+else # If we have the perl root as a tarball, extract it
+    if [ -f "$_perl_root.tgz" ]; then
+        pushd "$_script_dir"
+        tar xzf "$_perl_root.tgz"
+        rm -f "$_perl_root.tgz"
+        PATH="${_perl_root}/bin${PATH:+:${PATH}}"; export PATH
+        PERL5LIB="${_perl_root}/lib/perl5${PERL5LIB:+:${PERL5LIB}}"; export PERL5LIB
+        PERL_LOCAL_LIB_ROOT="${_perl_root}${PERL_LOCAL_LIB_ROOT:+:${PERL_LOCAL_LIB_ROOT}}"; export PERL_LOCAL_LIB_ROOT
+        PERL_MB_OPT="--install_base \"${_perl_root}\""; export PERL_MB_OPT
+        PERL_MM_OPT="INSTALL_BASE=${_perl_root}"; export PERL_MM_OPT
+        popd
+    else # Just overload ansifold and strip all ansi before folding
+        ansifold() {
+            args=()
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    -s)     args+=("-s")                                    ;;
+                    -w*|--width=*)
+                        if [ "$1" == "-w" ]; then
+                            shift
+                            args+=("-w" "$1")
+                        elif [ `_echo "$1" | head -c 7` == "--width" ]; then
+                            _width=`echo "$1" | cut -d= -f2-`
+                            args+=("-w" "$_width")
+                        else
+                            _width=`echo "$1" | tail -c +3`
+                            args+=("-w" "$_width")
+                        fi                                                  ;;
+                    *)      args+=("$1")                                    ;;
+                esac; shift
+            done
+            __strip_stdin | fold "${args[@]}"
+        }
+    fi
+fi
+
+# Using the first argument as an ansi definition, wrap all subsequent args before ending with a reset
+_ansi_wrap() {
+    _echo_nol "${1}"
+    shift
+    _echo_nol "${*}"
+    _echo_nol "${ansi_reset}"
+}
+# Display a traditional red text error box
+_error_box() {
+    _ansi_wrap "${red_text}" ' [  '
+    _ansi_wrap "${red_bold}" 'ERROR'
+    _ansi_wrap "${red_text}" '  ] '
+    _echo
+}
+# Display a traditional yellow text warn box
+_warn_box() {
+    _ansi_wrap "${yellow_text}" ' [ '
+    _ansi_wrap "${yellow_bold}" 'WARNING'
+    _ansi_wrap "${yellow_text}" ' ] '
+    _echo
+}
+# Display a traditional green text success box
+_success_box() {
+    _ansi_wrap "${green_text}" ' [ '
+    _ansi_wrap "${green_bold}" 'SUCCESS'
+    _ansi_wrap "${green_text}" ' ] '
+    _echo
+}
+# Dynamically find the width we should draw to, using environment variables and looking for tput if AUTO
+_term_width() {
+    if [ "$FORMATTER_AUTO_WIDTH" -eq 1 ]; then
+        if which tput >/dev/null 2>&1 ; then
+            _cols=`tput cols 2>/dev/null`
+            if [ "$_cols" -gt '0' ] 2>/dev/null && [ "$_cols" -le "$FORMATTER_MAX_WIDTH" ]; then
+                _echo "$_cols"
+            else
+                _echo "$FORMATTER_MAX_WIDTH"
+            fi
+        else
+            _echo "$FORMATTER_MAX_WIDTH"
+        fi
+    else
+        _echo "$FORMATTER_MAX_WIDTH"
+    fi
+}
+# Internal text wrapper with no new line, first arg by second arg wide
+_wrap_nol() {
+    _echo_nol "$1" | ansifold -s -w"$2"
+}
+# Display first arg as text, run remaining args, print number of spaces at end
+#   required to come to _term_width - 13 (for box displays)
+_run() {
+    _width=`_term_width`
+    _msg_width=`expr $_width - 13`
+    _msg=`_wrap_nol "$1" "$_msg_width"`
+    _last_line=`_echo "$_msg" | tail -n 1`
+    _last_line=`__strip_args "$_last_line"`
+    _last_line=`_echo_nol "$_last_line" | wc -c`
+    _msg_space=`expr $_msg_width - $_last_line`
+    _echo_nol "$_msg"
+    shift
+    eval "$@" >&3 2>&1
+    run_ret=$?
+    __spaces "$_msg_space"
+    return $run_ret
+}
+# Print the first arg without a newline centered on a space the second arg wide
+# DOES NOT WRAP, prints and returns 1 if too long
+_center_nol() {
+    _msg="$1"
+    _msg_max_width="$2"
+    _msg_width=`_echo_nol "$_msg" | __strip_stdin | wc -c`
+    [ "$_msg_width" -gt "$_msg_max_width" ] && _echo_nol "$_msg" && return 1
+    _diff=`expr $_msg_max_width - $_msg_width`
+    _odd=`expr $_diff % 2`
+    _start_space=`expr $_diff / 2`
+    __spaces "$_start_space"
+    _echo_nol "$_msg"
+    __spaces `expr $_start_space + $_odd`
+}
+# Repeats first arg char second arg times
+_repeat_char() {
+    __spaces "$2" | tr ' ' "$1"
+}
+# Centers the string on first arg width and adds newline
+_center_text() {
+    _width="$1"
+    shift
+    _center_nol "$*" "$_width"
+    _echo
+}
+# Centers and wraps by first arg all remaining args
+_center_text_wrap() {
+    _width="$1"
+    shift
+    _echo "$*" | ansifold -s -w"$_width" | while read -r line; do
+        _center_text "$_width" "$line"
+    done
+}
+# Draws a plus line, arg wide, like so:
+# +---------------------+
+_bounded_line() {
+    _echo_nol '+'
+    _repeat_char '-' `expr $1 - 2`
+    _echo '+'
+}
+# Draws a slash rounded line, first arg wide
+# -1 as second arg for top, -2 as second arg for bottom
+_soft_bounded_line() {
+    [ "$2" == '-2' ] && _echo_nol '\\' || _echo_nol '/'
+    _repeat_char '-' `expr $1 - 2`
+    [ "$2" == '-1' ] && _echo '\\' || _echo '/'
+}
+# All text to wrap as first arg, width of overall box as second arg
+# wraps in pipes, like so:
+# |         text        |
+_bounded_center_text_wrap() {
+    _wrap_width=`expr $1 - 4`
+    shift
+    _color=''
+    if [ "$1" == '-c' ]; then
+        shift; _color="$1"
+        shift
+    fi
+    _echo "$*" | ansifold -s -w"$_wrap_width" | while read -r line; do
+        _ansi_wrap "$_color" '| '
+        _center_nol "$line" "$_wrap_width"
+        _ansi_wrap "$_color" ' |'
+        _echo
+    done
+}
+# Determine the length of the longest line in a string
+_longest_line_length() {
+    _echo "$*" | while read -r line; do
+        _echo_nol "$line" | __strip_stdin | wc -c
+    done | sort | tail -n 1
+}
+
+###############################################################################
+# BEGIN EXTERNAL FUNCTIONS AND VARS
+
+# Preconstructed text types
+black_text=`_ansi_seq "$_ansi_black"`
+red_text=`_ansi_seq "$_ansi_red"`
+green_text=`_ansi_seq "$_ansi_green"`
+yellow_text=`_ansi_seq "$_ansi_yellow"`
+blue_text=`_ansi_seq "$_ansi_blue"`
+magenta_text=`_ansi_seq "$_ansi_magenta"`
+cyan_text=`_ansi_seq "$_ansi_cyan"`
+white_text=`_ansi_seq "$_ansi_white"`
+
+black_bold=`_ansi_seq -B "$_ansi_black"`
+red_bold=`_ansi_seq -B "$_ansi_red"`
+green_bold=`_ansi_seq -B "$_ansi_green"`
+yellow_bold=`_ansi_seq -B "$_ansi_yellow"`
+blue_bold=`_ansi_seq -B "$_ansi_blue"`
+magenta_bold=`_ansi_seq -B "$_ansi_magenta"`
+cyan_bold=`_ansi_seq -B "$_ansi_cyan"`
+white_bold=`_ansi_seq -B "$_ansi_white"`
+
+black_bg=`_ansi_seq -b "$_ansi_black"`
+red_bg=`_ansi_seq -b "$_ansi_red"`
+green_bg=`_ansi_seq -b "$_ansi_green"`
+yellow_bg=`_ansi_seq -b "$_ansi_yellow"`
+blue_bg=`_ansi_seq -b "$_ansi_blue"`
+magenta_bg=`_ansi_seq -b "$_ansi_magenta"`
+cyan_bg=`_ansi_seq -b "$_ansi_cyan"`
+white_bg=`_ansi_seq -b "$_ansi_white"`
+
+ansi_reset='\033[0m'
+
+# Text wrapper for dynamic width terminal
+wrap_text() {
+    _echo "$*" | ansifold -s -w`_term_width`
+}
+# Center all passed args directly on the screen, wrapping text
+center_wrap_text() {
+    _center_text_wrap `_term_width` "$*"
+}
+# Wrap the first arg, run the remaining args, display success box or warning box on failure
+# return code from command
+warn_run() {
+    _msg="$1" ; shift
+    _run "$_msg" "$_cmd"
+    run_ret=$?
+    [ $run_ret -eq 0 ] && _success_box || _warn_box
+    return $run_ret
+}
+# Wrap the first arg, run the remaining args, display success box or error box on failure
+# return code from command
+error_run() {
+    _msg="$1" ; shift ; _cmd="$@"
+    _run "$_msg" "$_cmd"
+    run_ret=$?
+    [ $run_ret -eq 0 ] && _success_box || _error_box
+    return $run_ret
+}
+# Text wrapper for dynamic width terminal with box border
+# Wrap text in a box, centering within the box.
+# -s                soft box edges
+# -a                auto width
+# -c 'ansi seq'     box border in ansi seq color
+# -w #              width of #, ignores term size
+border_text() {
+    _box_msg=()
+    _box=hard
+    _width=`_term_width`
+    _auto=0
+    _color=''
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -s)     _box=soft           ;;
+            -a)     _auto=1             ;;
+            -c)     shift; _color="$1"  ;;
+            -w)     shift; _width="$1"  ;;
+            *)      _box_msg+=("$1")        ;;
+        esac; shift
+    done
+    if [ $_auto -eq 1 ]; then
+        _wrap_width=`expr $_width - 4`
+        _msg_wrapped=`_wrap_nol "${_box_msg[*]}" "$_wrap_width"`
+        _width=`_longest_line_length "$_msg_wrapped"`
+        _width=`expr $_width + 4`
+    fi
+    if [ "$_box" == 'hard' ]; then
+        _topline=`_bounded_line "$_width"`
+        _bottomline=$_topline
+    else
+        _topline=`_soft_bounded_line "$_width" -1`
+        _bottomline=`_soft_bounded_line "$_width" -2`
+    fi
+    _ansi_wrap "$_color" "${_topline}" ; _echo
+    _bounded_center_text_wrap "$_width" -c "$_color" "${_box_msg[@]}"
+    _ansi_wrap "$_color" "${_bottomline}"; _echo
+}
+center_border_text() {
+    _the_box=`border_text -a "${@}"`
+    center_wrap_text "$_the_box"
+}
