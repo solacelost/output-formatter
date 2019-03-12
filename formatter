@@ -253,6 +253,7 @@ _run() {
     _msg_space=`expr $_msg_width - $_last_line`
     _echo_nol "$_msg"
     shift
+    _echo "$_msg" >&3
     eval "$@" >&3 2>&1
     run_ret=$?
     __spaces "$_msg_space"
@@ -374,7 +375,7 @@ center_wrap_text() {
 # Wrap the first arg, run the remaining args, display success box or warning box on failure
 # return code from command
 warn_run() {
-    _msg="$1" ; shift
+    _msg="$1" ; shift ; _cmd="$@"
     _run "$_msg" "$_cmd"
     run_ret=$?
     [ $run_ret -eq 0 ] && _success_box || _warn_box
