@@ -199,7 +199,7 @@ ansifold() {
     local current_ansi=''
     [ -z "$width" ] && width=$(_term_width)
     for word in $stdin ; do
-        if _echo "$word" | grep -Pq "$_ansi_regex"; then
+        if ! _echo "$word" | grep -Pq "$_ansi_regex\$" && _echo "$word" | grep -Pq "$_ansi_regex"; then
             current_ansi=$(_echo "$word" | grep -Po "$_ansi_regex" | tail -1)
         fi
         wordw=$(__strip_args $word | wc -c)
@@ -246,7 +246,7 @@ _run() {
     # Figure out how wide the last line is
     local _last_line=$(_echo "$_msg" | tail -n 1 | __strip_stdin | wc -c)
     # How much space we need to append for the box
-    local _msg_space=$(( $_msg_width - $_last_line ))
+    local _msg_space=$(( $_msg_width - $_last_line  + 1))
 
     # Print the message (wrapped)
     _echo_nol "$_msg"
@@ -287,12 +287,6 @@ _center_nol() {
     __spaces $(( $_start_space + $_odd ))
 }
 
-# Repeats first arg char second arg times...by cheating. (printf is very fast,
-#   though...)
-_repeat_char() {
-    __spaces "$2" | tr ' ' "$1"
-}
-
 # Centers the string on first arg width and adds newline
 _center_text() {
     local _width="$1"
@@ -314,7 +308,7 @@ _center_text_wrap() {
 # +---------------------+
 _bounded_line() {
     _echo_nol '+'
-    _repeat_char '-' $(( $1 - 2 ))
+    repeat_char '-' $(( $1 - 2 ))
     _echo '+'
 }
 
@@ -322,7 +316,7 @@ _bounded_line() {
 # -1 as second arg for top, -2 as second arg for bottom
 _soft_bounded_line() {
     [ "$2" == '-2' ] && _echo_nol '\\' || _echo_nol '/'
-    _repeat_char '-' $(( $1 - 2 ))
+    repeat_char '-' $(( $1 - 2 ))
     [ "$2" == '-1' ] && _echo '\\' || _echo '/'
 }
 
@@ -391,6 +385,12 @@ wrap() {
 # Center all passed args directly on the screen, wrapping text
 center_wrap() {
     _center_text_wrap $(_term_width) "$*"
+}
+
+# Repeats first arg char second arg times...by cheating. (printf is very fast,
+#   though...)
+repeat_char() {
+    __spaces "$2" | tr ' ' "$1"
 }
 
 # Wrap the first arg, run the remaining args, display success box or warning box
