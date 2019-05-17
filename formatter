@@ -54,19 +54,17 @@ __strip_stdin() {
 
 # Strip ANSI escapes from all arguments
 __strip_args() {
-    echo -ne "$*" | __strip_stdin
+    printf "$@" | __strip_stdin
 }
 
 # Basic abstraction to handle output regardless of formatting choices
 __echo() {
-    local opt="$1"
-    shift
-    local _msg="$*"
-
     if [ "$FORMATTER_NO_COLOR" -eq 1 ] ; then
-        _msg=$(__strip_args "${_msg}")
+        local echo_cmd=__strip_args
+    else
+        local echo_cmd=printf
     fi
-    echo $opt -e "$_msg"
+    $echo_cmd "$@"
 }
 
 # Repeat spaces for things
@@ -76,12 +74,12 @@ __spaces() {
 
 # Normal output with newline
 _echo() {
-    __echo '' "$*"
+    __echo "$*\n"
 }
 
 # Output with no trailing newline
 _echo_nol() {
-    __echo -n "$*"
+    __echo "$*"
 }
 
 
