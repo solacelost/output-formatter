@@ -1,19 +1,26 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# Output Formatter
-# ################
-# Copyright 2019 James Harmison <jharmison@gmail.com>
+#    Formatter - a collection of output formatting functions in native bash
+#    Copyright (C) 2019 James Harmison <jharmison at gmail dot com>
 #
-# This output formatter is intended to be sourced in your script. There are
-# functions and formatting definitions exposed at the bottom of this script
-# that you can then utilize.
-# Output of run commands can be retrieved by manipulating FD3, to which all
-# commands dump their output. If no FD3 is specified, the output is sent to
-# /dev/null.
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
 #
-# Portions of this formatter were inspired by and taken from the work in
-# Spectre & Meltdown checker by Stephane Lesimple under the GNU GPL 3.0
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+# Portions of this formatter were inspired by, and several taken from, the work
+#   in Spectre & Meltdown checker by Stephane Lesimple, licensed under the GNU
+# GPL 3.0
 #       https://github.com/speed47/spectre-meltdown-checker
 ################################################################################
 
@@ -414,7 +421,7 @@ error_run() {
 # Text wrapper for dynamic width terminal with box border
 # Wrap text in a box, centering all text within the box.
 # -s                soft box edges
-# -f                full terminal width, rather than msg
+# -f                fixed terminal width, rather than msg
 # -c 'ansi seq'     box border in ansi seq color
 # -w #              width of #, ignores term size
 border_text() {
@@ -425,7 +432,7 @@ border_text() {
     local _box_msg=()
     local _box=hard
     local _width=''
-    local _auto=1
+    local _auto=$FORMATTER_AUTO_WIDTH
     local _color=''
     # Parse our args
     while [ $# -gt 0 ]; do
@@ -434,7 +441,6 @@ border_text() {
             -f)     _auto=0             ;;
             -c)     shift; _color="$1"  ;;
             -w)     shift; _width="$1"  ;;
-            -a)                         ;;
             *)      _box_msg+=("$1")        ;;
         esac; shift
     done
@@ -467,7 +473,7 @@ border_text() {
 
 # The same as above, but centered on the screen
 center_border_text() {
-    border_text -a "${@}" | while read -r line; do
+    border_text "${@}" | while read -r line; do
         _center_text $(_term_width) "$line"
     done
 }
