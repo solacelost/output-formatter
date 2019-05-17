@@ -25,24 +25,88 @@
 ################################################################################
 
 
-# Set these variables to something else after sourcing to modify behavior:
-FORMATTER_NO_COLOR=0
-FORMATTER_AUTO_WIDTH=1
-FORMATTER_MAX_WIDTH=80
-
-# Some internal setup stuff
+# Exposed functions documentation
 ################################################################################
+# ansifold W            Behaves like fold -s -w W except it doesn't count ANSI
+#                           escape sequences in the count for width.
+# wrap                  Wraps all arguments around the terminal width, using
+#                           ansifold.
+# center_wrap           Wraps all arguments around the terminal width, using
+#                           ansifold, and centers each line on the same.
+# repeat_char C #       Repeats character C # times, with no trailing newline.
+# warn_run [-q] M C     Displays message M, executes command C and redirects
+#                           stdout to FD7 as manipulated above. On return
+#                           status displays a [ SUCCESS ] or [ WARNING ] box.
+#                           Unless -q is specified, also outputs M to FD7.
+# error_run [-q] M C    Displays message M, executes command C and redirects
+#                           stdout to FD7 as manipulated above. On return
+#                           status displays a [ SUCCESS ] or [  ERROR  ] box.
+#                           Unless -q is specified, also outputs M to FD7.
+# border_text [O] T     Displays text T bordered in a box fit to 4+the width of
+#                           T when wrapped. Supports the following options:
+#       -s              Soft box edges, instead of hard-edged.
+#       -f              Fixed width box (defaults to $FORMATTER_MAX_WIDTH) with
+#                           T centered inside
+#       -c C            Box border is drawn in color C
+#       -w W            Box fixed width is W instead of $FORMATTER_MAX_WIDTH
+#               NOTE:   Any non-specified argument is interpreted as another
+#                           word of T.
+# center_border_text [O] T      The same as above, except the box is centered.
+# 
+# Exposed variables documentation
+################################################################################
+# black, red, green, yellow, blue, magenta, cyan, and white are provided as
+#   colors in combination with text, bold, and bg as placement.
+#
+# For example, the variables are named like: `$black_text`, `$magenta_bold` or
+#   `$white_bg` and can be prepended to any text you would like displayed in
+#   that way. 
+#
+# Additionally, you have access to `$ansi_reset` to return all ANSI escapes to
+#   the default handling of your terminal.
+#
+# The following can be set before or after sourcing, and even in-between
+#   function calls, and will react accordingly:
+# $FORMATTER_MAX_WIDTH      The maximum width that formatter will allow any text
+#                               to wrap to..                         DEFAULT: 80
+# $FORMATTER_AUTO_WIDTH     Set to 1 for automatic width determinations, 0 for
+#                               fixed-width opterations (at MAX).    DEFAULT: 1
+# $FORMATTER_NO_COLOR       Set to 1 to strip ANSI escape sequences from all
+#                               text in all scenarios, e.g. to support logging
+#                               of statuses for an automated script, or 0 to
+#                               leave ANSI escapes/color alone.      DEFAULT: 0
+# FD 7                      The file descriptor that all *_run command output
+#                               is redirected to. If you want to collect the
+#                               output, change the handling of the FD with, for
+#                               example, `exec 7>/tmp/output.log`, to log the
+#                               message displayed, followed by the command
+#                               output, to the file /tmp/output.log.
+#
+# Additional notes
+################################################################################
+# Obviously a lot more is available to you than documented. If you can read
+#   through them and understand their uses, you are of course welcome to do with
+#   them as you wish. They are unsupported and strange, unexpected behavior may
+#   result as the higher abstractions often exist to handle edge cases not
+#   accounted for in the undocumented functions.
+################################################################################
+
+
+[ -z "$FORMATTER_NO_COLOR" ] && FORMATTER_NO_COLOR=0
+[ -z "$FORMATTER_AUTO_WIDTH" ] && FORMATTER_AUTO_WIDTH=1
+[ -z "$FORMATTER_MAX_WIDTH" ] && FORMATTER_MAX_WIDTH=80
+
+if ! { >&7; } 2>/dev/null; then # FD 7 not already defined
+    exec 7>/dev/null            # so just dump all output
+fi
+
 # Some basic things to construct text types from
+################################################################################
 _ctrlchar=$(printf "\033") ; _ansi_prefix='\033[' ; _ansi_fg=30 ; _ansi_bg=40
 _ansi_black=0 ; _ansi_red=1 ; _ansi_green=2 ; _ansi_yellow=3
 _ansi_blue=4 ; _ansi_magenta=5 ; _ansi_cyan=6 ; _ansi_white=7
 _ansi_regex="$_ctrlchar"'\[([0-9][0-9]?(;[0-9][0-9]?)?)?m'
 _ansi_bold_suffix=';1'
-
-# What to do with output of commands we run in boxes
-if ! { true >&3;} 2>/dev/null; then # FD 3 not already defined
-    exec 3>/dev/null                # so just dump all output
-fi
 
 # The beginning of our abstraction construction
 ################################################################################
@@ -242,6 +306,11 @@ _wrap_nol() {
 # Display first arg as text, run remaining args, print number of spaces at end
 #   required to come to _term_width - 13 (for box displays)
 _run() {
+    local quiet=''
+    if [ "$1" == '-q' ]; then
+        quiet=true
+        shift
+    fi
     # Overall width of the message
     local _width=$(_term_width)
     # Trimmed message for box display
@@ -256,10 +325,12 @@ _run() {
     # Print the message (wrapped)
     _echo_nol "$_msg"
     shift
-    # Log the message
-    _echo "$_msg" >&3
+    if [ "$1" != '-q' -o "$quiet" ]; then
+        # Log the message
+        _echo "$_msg" >&7
+    fi
     # Run the commands
-    eval "$@" >&3 2>&1
+    eval "$@" >&7 2>&1
     # Grab status
     local run_ret=$?
     # Put the number of spaces required
@@ -416,12 +487,7 @@ error_run() {
     return $run_ret
 }
 
-# Text wrapper for dynamic width terminal with box border
 # Wrap text in a box, centering all text within the box.
-# -s                soft box edges
-# -f                fixed terminal width, rather than msg
-# -c 'ansi seq'     box border in ansi seq color
-# -w #              width of #, ignores term size
 border_text() {
     local _wrap_width=''
     local _msg_wrapped=''

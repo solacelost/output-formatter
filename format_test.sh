@@ -76,7 +76,7 @@ echo; echo
 echo 'running no space line to break things:'
 error_run "$no_space_line" true
 repeat_char '-' $FORMATTER_MAX_WIDTH; echo; echo
-exec 3>tmp_file
+exec 7>tmp_file
 echo 'running non-auto max width long blue line with logging of cmd output:'
 error_run "$blue_long_line" head -10 /etc/passwd
 repeat_char '-' $FORMATTER_MAX_WIDTH
