@@ -22,11 +22,11 @@
 #   in Spectre & Meltdown checker by Stephane Lesimple, licensed under the GNU
 # GPL 3.0
 #       https://github.com/speed47/spectre-meltdown-checker
-################################################################################
+###############################################################################
 
 
 # Exposed functions documentation
-################################################################################
+###############################################################################
 # ansifold W            Behaves like fold -s -w W except it doesn't count ANSI
 #                           escape sequences in the count for width.
 # wrap                  Wraps all arguments around the terminal width, using
@@ -54,7 +54,7 @@
 # center_border_text [O] T      The same as above, except the box is centered.
 #
 # Exposed variables documentation
-################################################################################
+###############################################################################
 # black, red, green, yellow, blue, magenta, cyan, and white are provided as
 #   colors in combination with text, bold, and bg as placement.
 #
@@ -67,32 +67,32 @@
 #
 # The following can be set before or after sourcing, and even in-between
 #   function calls, and will react accordingly:
-# $FORMATTER_MAX_WIDTH      The maximum width that formatter will allow any text
-#                               to wrap to..                         DEFAULT: 80
-# $FORMATTER_AUTO_WIDTH     Set to 1 for automatic width determinations, 0 for
-#                               fixed-width opterations (at MAX).    DEFAULT: 1
-# $FORMATTER_NO_COLOR       Set to 1 to strip ANSI escape sequences from all
-#                               text in all scenarios, e.g. to support logging
-#                               of statuses for an automated script, or 0 to
-#                               leave ANSI escapes/color alone.      DEFAULT: 0
-# FD 7                      The file descriptor that all *_run command output
-#                               is redirected to. If you want to collect the
-#                               output, change the handling of the FD with, for
-#                               example, `exec 7>/tmp/output.log`, to log the
-#                               message displayed, followed by the command
-#                               output, to the file /tmp/output.log.
+# $FORMATTER_MAX_WIDTH     The maximum width that formatter will allow any text
+#                              to wrap to..                         DEFAULT: 80
+# $FORMATTER_AUTO_WIDTH    Set to 1 for automatic width determinations, 0 for
+#                              fixed-width opterations (at MAX).    DEFAULT: 1
+# $FORMATTER_NO_COLOR      Set to 1 to strip ANSI escape sequences from all
+#                              text in all scenarios, e.g. to support logging
+#                              of statuses for an automated script, or 0 to
+#                              leave ANSI escapes/color alone.      DEFAULT: 0
+# FD 7                     The file descriptor that all *_run command output
+#                              is redirected to. If you want to collect the
+#                              output, change the handling of the FD with, for
+#                              example, `exec 7>/tmp/output.log`, to log the
+#                              message displayed, followed by the command
+#                              output, to the file /tmp/output.log.
 #
 # Additional notes
-################################################################################
+###############################################################################
 # $FORMATTER_NO_ERRORS will contain the number of errors encountered during
 #   execution of any warn_run or error_runs by beginning at zero and
 #   incrementing for every failure encountered.
 # Obviously a lot more is available to you than documented. If you can read
-#   through them and understand their uses, you are of course welcome to do with
-#   them as you wish. They are unsupported and strange, unexpected behavior may
-#   result as the higher abstractions often exist to handle edge cases not
-#   accounted for in the undocumented functions.
-################################################################################
+#   through them and understand their uses, you are of course welcome to do
+#   with them as you wish. They are unsupported and strange, unexpected
+#   behavior may result as the higher abstractions often exist to handle edge
+#   cases not accounted for in the undocumented functions.
+###############################################################################
 
 
 [ -z "$FORMATTER_NO_COLOR" ] && FORMATTER_NO_COLOR=0
@@ -106,7 +106,7 @@ if ! { >&7; } 2>/dev/null; then # FD 7 not already defined
 fi
 
 # Some basic things to construct text types from
-################################################################################
+###############################################################################
 _ctrlchar=$(printf "\033") ; _ansi_prefix='\033[' ; _ansi_fg=30 ; _ansi_bg=40
 _ansi_black=0 ; _ansi_red=1 ; _ansi_green=2 ; _ansi_yellow=3
 _ansi_blue=4 ; _ansi_magenta=5 ; _ansi_cyan=6 ; _ansi_white=7
@@ -114,7 +114,7 @@ _ansi_regex="$_ctrlchar"'\[([0-9][0-9]?(;[0-9][0-9]?)?)?m'
 _ansi_bold_suffix=';1'
 
 # The beginning of our abstraction construction
-################################################################################
+###############################################################################
 
 # Strip ANSI escapes from stdin
 __strip_stdin() {
@@ -129,11 +129,10 @@ __strip_args() {
 # Basic abstraction to handle output regardless of formatting choices
 __echo() {
     if [ "$FORMATTER_NO_COLOR" -eq 1 ] ; then
-        local echo_cmd=__strip_args
+        __strip_args "$*"
     else
-        local echo_cmd=printf
+        printf -- "$*"
     fi
-    $echo_cmd -- "$@"
 }
 
 # Repeat spaces for things
@@ -154,7 +153,7 @@ _echo_nol() {
 
 # Some more layered abstraction, relying on the previous to produce consistent
 #   behavior. Wrapping and ANSI work.
-################################################################################
+###############################################################################
 
 # Build ANSI definitions
 _ansi_seq() {
@@ -172,7 +171,8 @@ _ansi_seq() {
     _echo_nol "${_ansi_prefix}${_ansi_code}${_ansi_tail}"
 }
 
-# Using the first argument as an ansi definition, wrap all subsequent args before ending with a reset
+# Using the first argument as an ansi definition, wrap all subsequent args
+#   before ending with a reset
 _ansi_wrap() {
     _echo_nol "${1}"
     shift
@@ -208,7 +208,8 @@ _success_box() {
 _term_width() {
     if [ "$FORMATTER_AUTO_WIDTH" -eq 1 ]; then
         if [ -n "$COLUMNS" ]; then
-            if [ "$COLUMNS" -gt '0' ] 2>/dev/null && [ "$COLUMNS" -le "$FORMATTER_MAX_WIDTH" ]; then
+            if [ "$COLUMNS" -gt '0' ] 2>/dev/null && \
+                                [ "$COLUMNS" -le "$FORMATTER_MAX_WIDTH" ]; then
                 echo "$COLUMNS"
             else
                 echo "$FORMATTER_MAX_WIDTH"
@@ -241,9 +242,12 @@ _ansifold() {
         for bit in ${greppy_bits}; do
             bitlen=$(_echo_nol "$bit" | cut -d: -f2 | wc -c)
             endbyte=$(( $(echo "$bit" | cut -d: -f1) ))
-            countable_text=$(_echo_nol "$stdin" | head -c $endbyte | tail -c +$startbyte)
-            header=$(_echo_nol "$countable_text" | head -c $(( $width - $offset )))
-            folded_text=$(_echo_nol "$countable_text" | tail -c +$(( $width - offset )) | fold -w$width)
+            countable_text=$(_echo_nol "$stdin" | head -c $endbyte | \
+                tail -c +$startbyte)
+            header=$(_echo_nol "$countable_text" | head -c \
+                $(( $width - $offset )))
+            folded_text=$(_echo_nol "$countable_text" | tail -c \
+                +$(( $width - offset )) | fold -w$width)
             trailer=$(_echo_nol "$folded_text" | tail -n 1)
             offset=$(_echo_nol "$trailer" | wc -c)
             _echo_nol "$header\n$folded_text"
@@ -253,7 +257,8 @@ _ansifold() {
 
         local remainder=$(_echo_nol "$stdin" | tail -c +$startbyte)
         header=$(_echo_nol "$remainder" | head -c $(( $width - $offset )))
-        folded_text=$(_echo_nol "$remainder" | tail -c +$(( $width - offset )) | fold -w$width)
+        folded_text=$(_echo_nol "$remainder" | tail -c \
+            +$(( $width - offset )) | fold -w$width)
         trailer=$(_echo_nol "$folded_text" | tail -n 1)
         offset=$(_echo_nol "$trailer" | wc -c)
         _echo_nol "$header\n$folded_text"
@@ -273,7 +278,8 @@ ansifold() {
     local current_ansi=''
     [ -z "$width" ] && width=$(_term_width)
     for word in $stdin ; do
-        if ! _echo "$word" | grep -Pq "$_ansi_regex\$" && _echo "$word" | grep -Pq "$_ansi_regex"; then
+        if ! _echo "$word" | grep -Pq "$_ansi_regex\$" && _echo "$word" | \
+                                                  grep -Pq "$_ansi_regex"; then
             current_ansi=$(_echo "$word" | grep -Po "$_ansi_regex" | tail -1)
         fi
         wordw=$(__strip_args $word | wc -c)
@@ -305,8 +311,9 @@ _wrap_nol() {
     _echo_nol "$1" | ansifold "$2"
 }
 
-# More layers to run commands and provide status handling with consistent output
-################################################################################
+# More layers to run commands and provide status handling with consistent
+#   output
+###############################################################################
 
 # Display first arg as text, run remaining args, print number of spaces at end
 #   required to come to _term_width - 13 (for box displays)
@@ -432,7 +439,7 @@ _longest_line_length() {
 
 # BEGIN EXTERNAL FUNCTIONS AND VARS
 #   These are things you should use, built on the constructs above
-################################################################################
+###############################################################################
 # Preconstructed text types
 black_text=$(_ansi_seq "$_ansi_black")
 red_text=$(_ansi_seq "$_ansi_red")
@@ -479,8 +486,8 @@ repeat_char() {
     __spaces "$2" | tr ' ' "$1"
 }
 
-# Wrap the first arg, run the remaining args, display success box or warning box
-#   on failure. Returns the return code from the command.
+# Wrap the first arg, run the remaining args, display success box or warning
+#   box on failure. Returns the return code from the command.
 warn_run() {
     _run "${@}"
     local run_ret=$?
