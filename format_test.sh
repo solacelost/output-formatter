@@ -95,6 +95,9 @@ echo; echo
 echo 'outputting wrapped long line:'
 wrap "$long_line"
 repeat_char '-' $FORMATTER_MAX_WIDTH; echo; echo
+echo 'outputting wrapped long line with hanging indent:'
+wrap -h "$long_line"
+repeat_char '-' $FORMATTER_MAX_WIDTH; echo; echo
 echo 'outputting wrapped long blue line:'
 wrap "$blue_long_line"
 repeat_char '-' $FORMATTER_MAX_WIDTH; echo; echo

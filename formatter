@@ -27,10 +27,12 @@
 
 # Exposed functions documentation
 ###############################################################################
-# ansifold W            Behaves like fold -s -w W except it doesn't count ANSI
-#                           escape sequences in the count for width.
-# wrap                  Wraps all arguments around the terminal width, using
-#                           ansifold.
+# ansifold [-h] W       Behaves like piping to fold -s -w W except it doesn't
+#                           count ANSI escape sequences in the count for width.
+#                           -h causes indents to hang by two spaces after
+#                           newlines.
+# wrap [-h] ARGS        Wraps all ARGS around the terminal width, using
+#                           ansifold, optionally hanging.
 # center_wrap           Wraps all arguments around the terminal width, using
 #                           ansifold, and centers each line on the same.
 # repeat_char C #       Repeats character C # times, with no trailing newline.
@@ -52,6 +54,10 @@
 #               NOTE:   Any non-specified argument is interpreted as another
 #                           word of T.
 # center_border_text [O] T      The same as above, except the box is centered.
+# ask ARGS              Works like `read -rp ARGS`, wrapping the ARGS with
+#                           `wrap -h` as above, except always echos the REPLY
+#                           to stdout and doesn't save the variable. Always
+#                           appends a space to the prompt!
 #
 # Exposed variables documentation
 ###############################################################################
@@ -270,6 +276,12 @@ _ansifold() {
 # NOTE: doesn't play well with complex spaces or additional newlines. Will
 #   normalize everything, returning a single block of text delimited by spaces.
 ansifold() {
+    if [ "$1" = '-h' ]; then
+        local hanging=true
+        shift
+    else
+        local hanging=
+    fi
     local stdin=$(cat)
     local width=$1
     local linew=0
@@ -290,14 +302,26 @@ ansifold() {
         #   behavior without splitting on spaces.
         if [ $wordw -gt $width ]; then # This word needs split
             _echo "${line[*]}${ansi_reset}"
-            word=$(_echo_nol $word | _ansifold $width)
-            _echo "$word" | head -n -1
-            line=("$current_ansi"$(_echo_nol "$word" | tail -1))
+            if [ "$hanging" ]; then
+                word=$(_echo_nol "$word" | _ansifold $(( $width - 2 )))
+                _echo "$word" | sed 's/^/  /' | head -n -1
+                line="$current_ansi"$(_echo_nol "$word" | sed 's/^/  /' | \
+                                      tail -n 1)
+            else
+                word=$(_echo_nol "$word" | _ansifold $width)
+                _echo "$word" | head -n -1
+                line=("$current_ansi"$(_echo_nol "$word" | tail -n 1))
+            fi
             linew=$(_echo "${line[*]}" | tail -1 | wc -c)
         elif [ $linew -gt $width ]; then # This word should start a new line
             _echo "${line[*]}${ansi_reset}"
-            line=("$current_ansi$word")
-            linew=$(( $wordw + 1 ))
+            if [ "$hanging" ]; then
+                line=("  $current_ansi$word")
+                linew=$(( $wordw + 3 ))
+            else
+                line=("$current_ansi$word")
+                linew=$(( $wordw + 1 ))
+            fi
         else
             line+=("$word")
             (( linew++ ))
@@ -472,7 +496,20 @@ ansi_reset='\033[0m'
 
 # Text wrapper for dynamic width terminal
 wrap() {
-    _echo "$*" | ansifold
+    if [ "$1" = '-h' ]; then
+        local args=('-h')
+        shift
+    else
+        local args=()
+    fi
+    _echo "$*" | ansifold "${args[@]}"
+}
+
+# read -rp clone with wrap -h support
+ask() {
+    local answer
+    read -rp "$(wrap -h $@) " answer
+    echo "$answer"
 }
 
 # Center all passed args directly on the screen, wrapping text
