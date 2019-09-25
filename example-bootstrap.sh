@@ -31,8 +31,8 @@ if [ ! -r formatter ]; then
     # Try to download the thing
     if ! $(which_dl formatter) "$formatter_url" 2>/dev/null; then
         echo "Unable to download formatter, please ensure you have network" \
-             "connectivity and write permissions to $(pwd), or stage" \
-             "formatter from the following link adjacent to mkvenv.sh:" >&2
+             "connectivity and write permissions to $(dirname $0), or stage" \
+             "formatter from the following link adjacent to $(basename $0):" >&2
         echo "$formatter_url" >&2
         exit 7
     fi
