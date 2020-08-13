@@ -81,6 +81,9 @@
 #                              text in all scenarios, e.g. to support logging
 #                              of statuses for an automated script, or 0 to
 #                              leave ANSI escapes/color alone.      DEFAULT: 0
+# $FORMATTER_PAD_RESULT    Set to 1 to push results of _run operations to the
+#                              right side of the screen, 0 to place directly
+#                              after MSG.                           DEFAULT: 1
 # FD 7                     The file descriptor that all *_run command output
 #                              is redirected to. If you want to collect the
 #                              output, change the handling of the FD with, for
@@ -104,6 +107,7 @@
 [ -z "$FORMATTER_NO_COLOR" ] && FORMATTER_NO_COLOR=0
 [ -z "$FORMATTER_AUTO_WIDTH" ] && FORMATTER_AUTO_WIDTH=1
 [ -z "$FORMATTER_MAX_WIDTH" ] && FORMATTER_MAX_WIDTH=80
+[ -z "$FORMATTER_PAD_RESULT" ] && FORMATTER_PAD_RESULT=1
 
 FORMATTER_NO_ERRORS=0
 
@@ -355,8 +359,12 @@ _run() {
     local _msg=$(_wrap_nol "$1" "$_msg_width")
     # Figure out how wide the last line is
     local _last_line=$(_echo "$_msg" | tail -n 1 | __strip_stdin | wc -c)
-    # How much space we need to append for the box
-    local _msg_space=$(( $_msg_width - $_last_line  + 1))
+    if [ $FORMATTER_PAD_RESULT -eq 1 ]; then
+        # How much space we need to append for the box
+        local _msg_space=$(( $_msg_width - $_last_line  + 1))
+    else
+        local _msg_space=0
+    fi
 
     # Print the message (wrapped)
     _echo_nol "$_msg"
@@ -367,7 +375,7 @@ _run() {
         __strip_args "RUN: ${*}\nRES:\n" >&7
     fi
     # Run the commands
-    eval "$@" >&7 2>&1
+    { eval "$@" ; } >&7 2>&1
     # Grab status
     local run_ret=$?
     # Increment failure counter if necessary
